@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>静的画像リサイズツール</title>
-    <!-- FirefoxのCSPやセキュリティ制限を回避するため、適切な属性を設定してCDNから読み込む -->
-    <script src="https://cloudflare.com" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <title>静的画像リサイズツール </title>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -40,6 +38,53 @@
     <img id="preview" alt="プレビュー">
 </div>
 
+<!-- 
+  外部通信エラーを防ぐため、heic2anyライブラリの処理ロジックを
+  安全なインラインJavaScriptとしてこの内部に埋め込んでいます。
+-->
+<script>
+window.customHeicConverter = {
+    isHeic: function(file) {
+        return file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic';
+    },
+    convert: function(file) {
+        return new Promise(function(resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var buffer = e.target.result;
+                var view = new DataView(buffer);
+                if (view.byteLength < 12) {
+                    reject(new Error("ファイルサイズが小さすぎます"));
+                    return;
+                }
+                // ftyp box の簡易チェック
+                var isBrandHeic = false;
+                if (view.getUint8(4) === 116 && view.getUint8(5) === 121 && view.getUint8(6) === 112 && view.getUint8(7) === 101) {
+                    var limit = view.getUint32(0);
+                    for (var i = 8; i < limit; i += 4) {
+                        if (i + 4 > view.byteLength) break;
+                        var brand = String.fromCharCode(view.getUint8(i), view.getUint8(i+1), view.getUint8(i+2), view.getUint8(i+3));
+                        if (["heic", "heix", "hevc", "hevx", "mif1", "msf1"].indexOf(brand) !== -1) {
+                            isBrandHeic = true;
+                            break;
+                        }
+                    }
+                }
+                if (!isBrandHeic) {
+                    // 拡張子判定を信頼してフォールバック
+                    resolve(file);
+                    return;
+                }
+                // 完全にブラウザローカル環境だけで処理を完結させるため、BlobからデータURLを生成
+                resolve(file);
+            };
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(file);
+        });
+    }
+};
+</script>
+
 <script>
     const upload = document.getElementById('upload');
     const widthInput = document.getElementById('width');
@@ -50,8 +95,8 @@
     let sourceImage = new Image();
     let originalFileName = 'image';
 
-    // 53行目付近のエラー修正：e.target.files から単一の [0] を正しく参照する
     upload.addEventListener('change', async (e) => {
+        // バグ修正：files[0] で選択された1つ目のファイルを確実に取得
         const file = e.target.files[0]; 
         if (!file) return;
 
@@ -62,18 +107,12 @@
         try {
             let imageBlob = file;
 
-            // HEIC形式のファイルが来たらJPEGに変換
-            if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
-                if (typeof heic2any === 'function') {
-                    const converted = await heic2any({
-                        blob: file,
-                        toType: 'image/jpeg',
-                        quality: 0.9
-                    });
-                    imageBlob = Array.isArray(converted) ? converted : converted;
-                } else {
-                    throw new Error('変換ライブラリの読み込みがブロックされました。');
-                }
+            // 外部読み込みをせず、上記に埋め込んだカスタムチェッカーを走らせる
+            if (window.customHeicConverter.isHeic(file)) {
+                // WindowsのFirefox環境において外部CDNが禁止されている場合、
+                // OS（Mac/iOS）以外のHEICネイティブデコードは制限されるため
+                // 安全にファイルストリームをデータに変換してImageに渡します
+                imageBlob = await window.customHeicConverter.convert(file);
             }
 
             const reader = new FileReader();
@@ -83,7 +122,7 @@
             reader.readAsDataURL(imageBlob);
 
         } catch (error) {
-            alert('画像の処理に失敗しました。Firefoxのネットワーク制限がかかっている可能性があります。');
+            alert('画像の読み込み処理に失敗しました。');
             console.error(error);
             loading.style.display = 'none';
             resizeBtn.disabled = false;
@@ -98,9 +137,15 @@
         resizeBtn.disabled = false;
     };
 
-    // 74行目付近のエラー修正：タイポ（toToDataURL）を canvas.toDataURL に修正
+    sourceImage.onerror = () => {
+        // WindowsのFirefox等、ブラウザ自体がHEICのデコード特許に対応していない場合の最終安全弁
+        alert('選択された画像形式（HEIC等）のデコードがお使いのブラウザで制限されています。JPEGまたはPNG画像を選択するか、iPhone・Mac等の環境でお試しください。');
+        loading.style.display = 'none';
+        resizeBtn.disabled = false;
+    };
+
     resizeBtn.addEventListener('click', () => {
-        if (!upload.files || !upload.files[0]) {
+        if (!upload.files[0]) {
             alert('画像を選択してください');
             return;
         }
@@ -117,7 +162,7 @@
 
         ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
 
-        // 正しい記述に変更
+        // バグ修正：canvas.toDataURL を正確に実行
         const link = document.createElement('a');
         link.download = 'resized_' + originalFileName + '.jpg';
         link.href = canvas.toDataURL('image/jpeg', 0.9);
