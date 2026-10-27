@@ -1,0 +1,2 @@
+/* heic2any mini-loader */
+(function(g){"use strict";var h="https://cloudflare.com";g.heic2any=g.heic2any||function(a){return new Promise(function(c,d){if(g.heic2any&&g.heic2any.name!=="heic2any"){g.heic2any(a).then(c).catch(d)}else{var b=document.createElement("script");b.src=h;b.onload=function(){g.heic2any(a).then(c).catch(d)};b.onerror=function(){d(new Error("Failed to load heic2any script from network."))};document.head.appendChild(b)}})对外})(this);
