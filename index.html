@@ -10,11 +10,9 @@
         .control { margin: 15px 0; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         input[type="number"], input[type="file"] { width: 100%; padding: 8px; box-sizing: border-box; }
-        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 10px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
         button:hover { background: #0056b3; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
         #preview { max-width: 100%; margin-top: 15px; display: none; border-radius: 4px; }
-        #loading { color: #666; font-style: italic; display: none; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -23,9 +21,8 @@
     <h2>画像リサイズツール</h2>
     
     <div class="control">
-        <label>画像を選択 (JPEG, PNG, HEICなど):</label>
-        <input type="file" id="upload" accept="image/*,.heic,.HEIC">
-        <div id="loading">画像を処理中...</div>
+        <label>画像を選択:</label>
+        <input type="file" id="upload" accept="image/*">
     </div>
 
     <div class="control">
@@ -33,7 +30,7 @@
         <input type="number" id="width" value="800" min="1">
     </div>
 
-    <button id="resizeBtn">リサイズしてJPEGで保存</button>
+    <button id="resizeBtn">リサイズしてダウンロード</button>
     
     <img id="preview" alt="プレビュー">
 </div>
@@ -43,54 +40,30 @@
     const widthInput = document.getElementById('width');
     const resizeBtn = document.getElementById('resizeBtn');
     const preview = document.getElementById('preview');
-    const loading = document.getElementById('loading');
 
     let sourceImage = new Image();
-    let originalFileName = 'image';
 
-    // 画像の選択処理
+    // 画像が読み込まれたら元の比率を計算して横幅のデフォルトを入れる
     upload.addEventListener('change', (e) => {
-        const file = e.target.files[0]; // 1つ目のファイルを確実に取得
+        const file = e.target.files[0];
         if (!file) return;
-
-        originalFileName = file.name.split('.').slice(0, -1).join('.');
-        loading.style.display = 'block';
-        resizeBtn.disabled = true;
 
         const reader = new FileReader();
         reader.onload = (event) => {
-            // 外部ライブラリを一切通さず、直接イメージ要素に流し込む
             sourceImage.src = event.target.result;
         };
-        
-        reader.onerror = () => {
-            alert('ファイルの読み込みに失敗しました。');
-            loading.style.display = 'none';
-            resizeBtn.disabled = false;
-        };
-
         reader.readAsDataURL(file);
     });
 
-    // 読み込みが正常に成功した場合
     sourceImage.onload = () => {
         widthInput.value = sourceImage.width;
         preview.src = sourceImage.src;
         preview.style.display = 'block';
-        loading.style.display = 'none';
-        resizeBtn.disabled = false;
     };
 
-    // ブラウザ側でデコードできなかった場合（ライブラリ非対応の環境でHEICを選んだ際など）
-    sourceImage.onerror = () => {
-        alert('このブラウザ（またはWindows環境）では、HEIC形式の直接デコードが制限されています。JPEGまたはPNG画像を選択するか、iPhone・Mac等の環境でお試しください。');
-        loading.style.display = 'none';
-        resizeBtn.disabled = false;
-    };
-
-    // リサイズと保存処理
+    // リサイズ処理とダウンロード
     resizeBtn.addEventListener('click', () => {
-        if (!upload.files || !upload.files[0]) {
+        if (!upload.files[0]) {
             alert('画像を選択してください');
             return;
         }
@@ -98,6 +71,7 @@
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
+        // 比率を維持して高さを計算
         const targetWidth = parseInt(widthInput.value);
         const scaleFactor = targetWidth / sourceImage.width;
         const targetHeight = sourceImage.height * scaleFactor;
@@ -105,13 +79,13 @@
         canvas.width = targetWidth;
         canvas.height = targetHeight;
 
-        // Canvas上に描画（ここでリサイズされる）
+        // Canvasに画像を描画（ここでリサイズされる）
         ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
 
-        // 正しい記述でダウンロードリンクを作成
+        // ダウンロードリンクを生成して自動クリック
         const link = document.createElement('a');
-        link.download = 'resized_' + originalFileName + '.jpg';
-        link.href = canvas.toDataURL('image/jpeg', 0.9);
+        link.download = 'resized_' + upload.files[0].name;
+        link.href = canvas.toDataURL(upload.files[0].type);
         link.click();
     });
 </script>
