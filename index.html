@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>静的画像リサイズツール (HEIC対応版)</title>
-    <!-- 読み込み先を安定した cdnjs に変更 -->
-    <script src="https://cloudflare.com" referrerpolicy="no-referrer"></script>
+    <title>静的画像リサイズツール</title>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -22,12 +20,12 @@
 <body>
 
 <div class="card">
-    <h2>画像リサイズツール (HEIC対応)</h2>
+    <h2>画像リサイズツール</h2>
     
     <div class="control">
         <label>画像を選択 (JPEG, PNG, HEICなど):</label>
         <input type="file" id="upload" accept="image/*,.heic,.HEIC">
-        <div id="loading">画像を処理中...（HEICは少し時間がかかります）</div>
+        <div id="loading">画像を処理中...</div>
     </div>
 
     <div class="control">
@@ -50,7 +48,7 @@
     let sourceImage = new Image();
     let originalFileName = 'image';
 
-    upload.addEventListener('change', async (e) => {
+    upload.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
@@ -58,36 +56,32 @@
         loading.style.display = 'block';
         resizeBtn.disabled = true;
 
-        try {
-            let imageBlob = file;
-
-            if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
-                const converted = await heic2any({
-                    blob: file,
-                    toType: 'image/jpeg',
-                    quality: 0.9
-                });
-                imageBlob = Array.isArray(converted) ? converted : converted;
-            }
-
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                sourceImage.src = event.target.result;
-            };
-            reader.readAsDataURL(imageBlob);
-
-        } catch (error) {
-            alert('画像の読み込み、またはHEICの変換に失敗しました。');
-            console.error(error);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            // 外部ライブラリを挟まず直接Imageオブジェクトに読み込む
+            sourceImage.src = event.target.result;
+        };
+        
+        reader.onerror = () => {
+            alert('ファイルの読み込みに失敗しました。');
             loading.style.display = 'none';
             resizeBtn.disabled = false;
-        }
+        };
+
+        reader.readAsDataURL(file);
     });
 
     sourceImage.onload = () => {
         widthInput.value = sourceImage.width;
         preview.src = sourceImage.src;
         preview.style.display = 'block';
+        loading.style.display = 'none';
+        resizeBtn.disabled = false;
+    };
+
+    sourceImage.onerror = () => {
+        // HEICがブラウザ側でデコードできない環境（Windowsの古いブラウザなど）向けのフォールバック
+        alert('このブラウザでは、この画像形式（HEIC等）の直接読み込みに対応していません。Safariや最新のスマホブラウザでお試しください。');
         loading.style.display = 'none';
         resizeBtn.disabled = false;
     };
@@ -110,6 +104,7 @@
 
         ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
 
+        // すべてJPEGで保存
         const link = document.createElement('a');
         link.download = 'resized_' + originalFileName + '.jpg';
         link.href = canvas.toDataURL('image/jpeg', 0.9);
