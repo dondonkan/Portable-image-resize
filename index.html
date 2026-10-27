@@ -3,16 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>静的画像リサイズツール</title>
+    <title>高機能・静的画像リサイズツール</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
+        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f5f5; color: #333; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .control { margin: 15px 0; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="number"], input[type="file"] { width: 100%; padding: 8px; box-sizing: border-box; }
-        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
+        .row { display: flex; gap: 15px; }
+        .row .control { flex: 1; margin: 0; }
+        input[type="number"], input[type="file"] { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .checkbox-label { display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; margin-top: 8px; }
+        
+        /* ドラッグ＆ドロップエリアのスタイル */
+        #dropZone { border: 2px dashed #007bff; border-radius: 6px; padding: 30px; text-align: center; background: #f8fafc; cursor: pointer; transition: background 0.2s; }
+        #dropZone.dragover { background: #e1f5fe; border-color: #0288d1; }
+        #dropZone p { margin: 0 0 10px 0; color: #555; }
+        #fileInput { display: none; }
+
+        button { background: #007bff; color: white; border: none; padding: 12px 15px; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 15px; font-weight: bold; }
         button:hover { background: #0056b3; }
-        #preview { max-width: 100%; margin-top: 15px; display: none; border-radius: 4px; }
+        
+        /* 情報表示とプレビュー */
+        .info-box { background: #e9ecef; padding: 10px; border-radius: 4px; margin-top: 15px; font-size: 14px; display: none; line-height: 1.6; }
+        #preview { max-width: 100%; margin-top: 15px; display: none; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
     </style>
 </head>
 <body>
@@ -20,72 +33,175 @@
 <div class="card">
     <h2>画像リサイズツール</h2>
     
-    <div class="control">
-        <label>画像を選択:</label>
-        <input type="file" id="upload" accept="image/*">
+    <!-- ドラッグ＆ドロップエリア -->
+    <div id="dropZone">
+        <p id="dropText">ここに画像をドラッグ＆ドロップ</p>
+        <p style="font-size: 12px; color: #888;">またはクリックしてファイルを選択</p>
+        <input type="file" id="fileInput" accept="image/jpeg, image/png, image/webp">
     </div>
 
-    <div class="control">
-        <label>横幅 (px):</label>
-        <input type="number" id="width" value="800" min="1">
+    <!-- サイズ設定（横幅・縦幅） -->
+    <div class="row" style="margin-top: 15px;">
+        <div class="control">
+            <label for="widthInput">横幅 (px):</label>
+            <input type="number" id="widthInput" value="800" min="1">
+        </div>
+        <div class="control">
+            <label for="heightInput">縦幅 (px):</label>
+            <input type="number" id="heightInput" value="600" min="1">
+        </div>
     </div>
 
-    <button id="resizeBtn">リサイズしてダウンロード</button>
+    <!-- 縦横比の固定チェックボックス -->
+    <label class="checkbox-label">
+        <input type="checkbox" id="maintainAspect" checked> 縦横の比率（アスペクト比）を維持する
+    </label>
+
+    <button id="resizeBtn">リサイズしてJPEGで保存</button>
+    
+    <!-- ファイルサイズなどの情報表示エリア -->
+    <div id="infoBox" class="info-box"></div>
     
     <img id="preview" alt="プレビュー">
 </div>
 
 <script>
-    const upload = document.getElementById('upload');
-    const widthInput = document.getElementById('width');
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const dropText = document.getElementById('dropText');
+    const widthInput = document.getElementById('widthInput');
+    const heightInput = document.getElementById('heightInput');
+    const maintainAspect = document.getElementById('maintainAspect');
     const resizeBtn = document.getElementById('resizeBtn');
+    const infoBox = document.getElementById('infoBox');
     const preview = document.getElementById('preview');
 
     let sourceImage = new Image();
+    let originalFileName = 'image';
+    let originalAspectRatio = 1;
 
-    // 画像が読み込まれたら元の比率を計算して横幅のデフォルトを入れる
-    upload.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+    // --- ① ドラッグ＆ドロップ処理 ---
+    dropZone.addEventListener('click', () => fileInput.click());
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            sourceImage.src = event.target.result;
-        };
-        reader.readAsDataURL(file);
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
     });
 
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            processFile(e.dataTransfer.files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            processFile(e.target.files[0]);
+        }
+    });
+
+    // ファイルの読み込み
+    function processFile(file) {
+        if (!file.type.startsWith('image/')) {
+            alert('画像ファイルを選択してください。');
+            return;
+        }
+        originalFileName = file.name.split('.').slice(0, -1).join('.');
+        dropText.textContent = `選択中: ${file.name}`;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            sourceImage.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // 画像が読み込まれたら初期値をセット
     sourceImage.onload = () => {
+        originalAspectRatio = sourceImage.width / sourceImage.height;
         widthInput.value = sourceImage.width;
+        heightInput.value = sourceImage.height;
+        
         preview.src = sourceImage.src;
         preview.style.display = 'block';
+        
+        updateEstimatedSize();
     };
 
-    // リサイズ処理とダウンロード
+    // --- ② 縦横比（アスペクト比）の連動処理 ---
+    widthInput.addEventListener('input', () => {
+        if (maintainAspect.checked && sourceImage.src) {
+            heightInput.value = Math.round(parseInt(widthInput.value) / originalAspectRatio) || '';
+        }
+        updateEstimatedSize();
+    });
+
+    heightInput.addEventListener('input', () => {
+        if (maintainAspect.checked && sourceImage.src) {
+            widthInput.value = Math.round(parseInt(heightInput.value) * originalAspectRatio) || '';
+        }
+        updateEstimatedSize();
+    });
+
+    maintainAspect.addEventListener('change', () => {
+        if (maintainAspect.checked && sourceImage.src) {
+            heightInput.value = Math.round(parseInt(widthInput.value) / originalAspectRatio) || '';
+            updateEstimatedSize();
+        }
+    });
+
+    // --- ③ ファイルサイズ（KB）の目安計算 ---
+    function updateEstimatedSize() {
+        if (!sourceImage.src) return;
+        
+        const w = parseInt(widthInput.value) || 0;
+        const h = parseInt(heightInput.value) || 0;
+        if (w === 0 || h === 0) return;
+
+        // 概算計算：1ピクセルあたり約0.25バイト（JPEG画質90%の一般的な平均値）として算出
+        const estimatedBytes = w * h * 0.25;
+        const estimatedKB = (estimatedBytes / 1024).toFixed(1);
+
+        infoBox.style.display = 'block';
+        infoBox.innerHTML = `
+            <strong>元のサイズ:</strong> ${sourceImage.width} x ${sourceImage.height} px<br>
+            <strong>リサイズ後（目安）:</strong> ${w} x ${h} px (約 ${estimatedKB} KB)
+        `;
+    }
+
+    // --- リサイズと保存処理 ---
     resizeBtn.addEventListener('click', () => {
-        if (!upload.files[0]) {
-            alert('画像を選択してください');
+        if (!sourceImage.src) {
+            alert('画像を選択またはドロップしてください');
+            return;
+        }
+
+        const targetWidth = parseInt(widthInput.value);
+        const targetHeight = parseInt(heightInput.value);
+
+        if (!targetWidth || !targetHeight) {
+            alert('有効な数値を入力してください');
             return;
         }
 
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
-        // 比率を維持して高さを計算
-        const targetWidth = parseInt(widthInput.value);
-        const scaleFactor = targetWidth / sourceImage.width;
-        const targetHeight = sourceImage.height * scaleFactor;
-
         canvas.width = targetWidth;
         canvas.height = targetHeight;
 
-        // Canvasに画像を描画（ここでリサイズされる）
+        // Canvasに描画（比率固定チェックが外れていれば、ここで自由に引き伸ばされます）
         ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
 
-        // ダウンロードリンクを生成して自動クリック
         const link = document.createElement('a');
-        link.download = 'resized_' + upload.files[0].name;
-        link.href = canvas.toDataURL(upload.files[0].type);
+        link.download = 'resized_' + originalFileName + '.jpg';
+        link.href = canvas.toDataURL('image/jpeg', 0.9); // 画質90%のJPEG
         link.click();
     });
 </script>
