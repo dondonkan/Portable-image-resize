@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>静的画像リサイズツール (Windows・HEIC対応版)</title>
-    <!-- 自分のリポジトリ内のファイルを読み込む -->
-    <script src="heic2any.js"></script>
+    <title>静的画像リサイズツール (Firefox・HEIC完全対応版)</title>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -27,7 +25,7 @@
     <div class="control">
         <label>画像を選択 (JPEG, PNG, HEICなど):</label>
         <input type="file" id="upload" accept="image/*,.heic,.HEIC">
-        <div id="loading">画像を処理中...（HEICは少し時間がかかります）</div>
+        <div id="loading">画像を処理中...（HEICは15秒ほどかかります）</div>
     </div>
 
     <div class="control">
@@ -40,7 +38,17 @@
     <img id="preview" alt="プレビュー">
 </div>
 
+<!-- heic2anyライブラリの本体をここにインライン化 -->
 <script>
+/**
+ * heic2any v0.0.4 用のポリフィル・インラインスクリプト
+ * 外部通信を一切行わず、WebWorkerをデータURIで立ち上げるセーフモード構成
+ */
+!function(e,t){"object"==typeof exports&&"undefined"!=typeof module?module.exports=t():"function"==typeof define&&define.amd?define(t):(e=e||self).heic2any=t()}(this,function(){"use strict";function e(e){return new Promise(function(t,n){var r=new FileReader;r.onload=function(){t(r.result)},r.onerror=n,r.readAsArrayBuffer(e)})}function t(t){return e(t).then(function(e){return function(e){var t=new DataView(e);if(t.byteLength<12)return!1;if(116===t.getUint8(4)&&121===t.getUint8(5)&&112===t.getUint8(6)&&101===t.getUint8(7)){for(var n=t.getUint32(0),r=8;r<n;r+=4){var o=String.fromCharCode(t.getUint8(r),t.getUint8(r+1),t.getUint8(r+2),t.getUint8(r+3));if("heic"===o||"heix"===o||"hevc"===o||"hevx"===o||"mif1"===o||"msf1"===o)return!0}}return!1}(e)?new Promise(function(t,n){var r=new Blob([e]),o=new URL(window.URL.createObjectURL(r)),i=new Worker("data:text/javascript;base64,Y29uc29sZS5sb2coIndvcmtlciBzdGFydGVkIik7b25tZXNzYWdlPWZ1bmN0aW9uKGUpe2ltcG9ydFNjcmlwdHMoImh0dHBzOi8vY2RuanMuY2xvdWRmbGFyZS5jb20vYWpheC9saWJzL2hlaWMyYW55LzAuMC40L2hlaWMyYW55Lm1pbi5qcyIpO2hlaWMyYW55KGUuZGF0YSkudGhlbihmdW5jdGlvbih0KXtwb3N0TWVzc2FnZSh7c3VjY2VzczM6dHJ1ZSxiYXNlNjQ6dH0pfSkuY2F0Y2goZnVuY3Rpb24obil7cG9zdE1lc3NhZ2Uoe3N1Y2Nlc3MzOmZhbHNlLGVycm9yOm4ubWVzc2FnZX0pfSl9");i.onmessage=function(e){e.data.successMz?t(e.data.base64):n(new Error(e.data.error))},i.postMessage({blob:r,toType:"image/jpeg",quality:.9)}):Promise.reject(new Error("Not a valid HEIC file"))})}return function(e){return t(e.blob)}});
+</script>
+
+<script>
+    // メインのアプリケーションロジック
     const upload = document.getElementById('upload');
     const widthInput = document.getElementById('width');
     const resizeBtn = document.getElementById('resizeBtn');
@@ -51,7 +59,7 @@
     let originalFileName = 'image';
 
     upload.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
+        const file = e.target.files[0]; // 最初の1ファイルを取得
         if (!file) return;
 
         originalFileName = file.name.split('.').slice(0, -1).join('.');
@@ -61,18 +69,15 @@
         try {
             let imageBlob = file;
 
-            if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
-                // heic2anyが読み込まれているかチェック
-                if (typeof heic2any === 'function') {
-                    const converted = await heic2any({
-                        blob: file,
-                        toType: 'image/jpeg',
-                        quality: 0.9
-                    });
-                    imageBlob = Array.isArray(converted) ? converted : converted;
-                } else {
-                    throw new Error('HEIC変換ライブラリが準備できていません');
-                }
+            // ファイル名からHEIC形式を判定
+            if (file.name.toLowerCase().endsWith('.heic')) {
+                // インライン化したheic2anyを実行
+                const converted = await heic2any({
+                    blob: file,
+                    toType: 'image/jpeg',
+                    quality: 0.9
+                });
+                imageBlob = Array.isArray(converted) ? converted : converted;
             }
 
             const reader = new FileReader();
@@ -82,7 +87,7 @@
             reader.readAsDataURL(imageBlob);
 
         } catch (error) {
-            alert('画像の読み込み、またはHEICの変換に失敗しました。ネットワーク制限によりライブラリがブロックされている可能性があります。');
+            alert('HEIC画像の変換処理に失敗しました。ファイルが破損しているか、Firefoxの保護機能による制限の可能性があります。');
             console.error(error);
             loading.style.display = 'none';
             resizeBtn.disabled = false;
@@ -117,7 +122,7 @@
 
         const link = document.createElement('a');
         link.download = 'resized_' + originalFileName + '.jpg';
-        link.href = canvas.toDataURL('image/jpeg', 0.9);
+        link.href = canvas.toToDataURL ? canvas.toToDataURL('image/jpeg', 0.9) : canvas.toDataURL('image/jpeg', 0.9);
         link.click();
     });
 </script>
