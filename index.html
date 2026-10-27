@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>静的画像リサイズツール (HEIC対応版)</title>
-    <!-- HEIC変換用のライブラリを読み込み -->
-    <script src="https://jsdelivr.net"></script>
+    <!-- 読み込み先を安定した cdnjs に変更 -->
+    <script src="https://cloudflare.com" referrerpolicy="no-referrer"></script>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -26,7 +26,6 @@
     
     <div class="control">
         <label>画像を選択 (JPEG, PNG, HEICなど):</label>
-        <!-- acceptに.heicと.HEICを追加 -->
         <input type="file" id="upload" accept="image/*,.heic,.HEIC">
         <div id="loading">画像を処理中...（HEICは少し時間がかかります）</div>
     </div>
@@ -55,25 +54,22 @@
         const file = e.target.files[0];
         if (!file) return;
 
-        originalFileName = file.name.split('.').slice(0, -1).join('.'); // 拡張子を除いたファイル名
+        originalFileName = file.name.split('.').slice(0, -1).join('.');
         loading.style.display = 'block';
         resizeBtn.disabled = true;
 
         try {
             let imageBlob = file;
 
-            // ファイル名またはタイプがHEICの場合、JPEGのBlobに変換する
             if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
                 const converted = await heic2any({
                     blob: file,
                     toType: 'image/jpeg',
                     quality: 0.9
                 });
-                // 複数選択ではないので、配列で返ってきた場合は最初の1つを取得
-                imageBlob = Array.isArray(converted) ? converted[0] : converted;
+                imageBlob = Array.isArray(converted) ? converted : converted;
             }
 
-            // 画像の読み込み処理
             const reader = new FileReader();
             reader.onload = (event) => {
                 sourceImage.src = event.target.result;
@@ -96,7 +92,6 @@
         resizeBtn.disabled = false;
     };
 
-    // リサイズ処理とダウンロード（JPEG固定）
     resizeBtn.addEventListener('click', () => {
         if (!upload.files[0]) {
             alert('画像を選択してください');
@@ -113,13 +108,11 @@
         canvas.width = targetWidth;
         canvas.height = targetHeight;
 
-        // Canvasに描画してリサイズ
         ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
 
-        // すべて「jpeg」として保存
         const link = document.createElement('a');
         link.download = 'resized_' + originalFileName + '.jpg';
-        link.href = canvas.toDataURL('image/jpeg', 0.9); // 画質90%のJPEG
+        link.href = canvas.toDataURL('image/jpeg', 0.9);
         link.click();
     });
 </script>
