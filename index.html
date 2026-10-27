@@ -3,26 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>静的画像リサイズツール</title>
+    <title>静的画像リサイズツール (HEIC対応版)</title>
+    <!-- HEIC変換用のライブラリを読み込み -->
+    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .control { margin: 15px 0; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         input[type="number"], input[type="file"] { width: 100%; padding: 8px; box-sizing: border-box; }
-        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 10px; }
         button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
         #preview { max-width: 100%; margin-top: 15px; display: none; border-radius: 4px; }
+        #loading { color: #666; font-style: italic; display: none; margin-top: 10px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>画像リサイズツール</h2>
+    <h2>画像リサイズツール (HEIC対応)</h2>
     
     <div class="control">
-        <label>画像を選択:</label>
-        <input type="file" id="upload" accept="image/*">
+        <label>画像を選択 (JPEG, PNG, HEICなど):</label>
+        <!-- acceptに.heicと.HEICを追加 -->
+        <input type="file" id="upload" accept="image/*,.heic,.HEIC">
+        <div id="loading">画像を処理中...（HEICは少し時間がかかります）</div>
     </div>
 
     <div class="control">
@@ -30,7 +36,7 @@
         <input type="number" id="width" value="800" min="1">
     </div>
 
-    <button id="resizeBtn">リサイズしてダウンロード</button>
+    <button id="resizeBtn">リサイズしてJPEGで保存</button>
     
     <img id="preview" alt="プレビュー">
 </div>
@@ -40,28 +46,57 @@
     const widthInput = document.getElementById('width');
     const resizeBtn = document.getElementById('resizeBtn');
     const preview = document.getElementById('preview');
+    const loading = document.getElementById('loading');
 
     let sourceImage = new Image();
+    let originalFileName = 'image';
 
-    // 画像が読み込まれたら元の比率を計算して横幅のデフォルトを入れる
-    upload.addEventListener('change', (e) => {
+    upload.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            sourceImage.src = event.target.result;
-        };
-        reader.readAsDataURL(file);
+        originalFileName = file.name.split('.').slice(0, -1).join('.'); // 拡張子を除いたファイル名
+        loading.style.display = 'block';
+        resizeBtn.disabled = true;
+
+        try {
+            let imageBlob = file;
+
+            // ファイル名またはタイプがHEICの場合、JPEGのBlobに変換する
+            if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
+                const converted = await heic2any({
+                    blob: file,
+                    toType: 'image/jpeg',
+                    quality: 0.9
+                });
+                // 複数選択ではないので、配列で返ってきた場合は最初の1つを取得
+                imageBlob = Array.isArray(converted) ? converted[0] : converted;
+            }
+
+            // 画像の読み込み処理
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                sourceImage.src = event.target.result;
+            };
+            reader.readAsDataURL(imageBlob);
+
+        } catch (error) {
+            alert('画像の読み込み、またはHEICの変換に失敗しました。');
+            console.error(error);
+            loading.style.display = 'none';
+            resizeBtn.disabled = false;
+        }
     });
 
     sourceImage.onload = () => {
         widthInput.value = sourceImage.width;
         preview.src = sourceImage.src;
         preview.style.display = 'block';
+        loading.style.display = 'none';
+        resizeBtn.disabled = false;
     };
 
-    // リサイズ処理とダウンロード
+    // リサイズ処理とダウンロード（JPEG固定）
     resizeBtn.addEventListener('click', () => {
         if (!upload.files[0]) {
             alert('画像を選択してください');
@@ -71,7 +106,6 @@
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
-        // 比率を維持して高さを計算
         const targetWidth = parseInt(widthInput.value);
         const scaleFactor = targetWidth / sourceImage.width;
         const targetHeight = sourceImage.height * scaleFactor;
@@ -79,13 +113,13 @@
         canvas.width = targetWidth;
         canvas.height = targetHeight;
 
-        // Canvasに画像を描画（ここでリサイズされる）
+        // Canvasに描画してリサイズ
         ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
 
-        // ダウンロードリンクを生成して自動クリック
+        // すべて「jpeg」として保存
         const link = document.createElement('a');
-        link.download = 'resized_' + upload.files[0].name;
-        link.href = canvas.toDataURL(upload.files[0].type);
+        link.download = 'resized_' + originalFileName + '.jpg';
+        link.href = canvas.toDataURL('image/jpeg', 0.9); // 画質90%のJPEG
         link.click();
     });
 </script>
